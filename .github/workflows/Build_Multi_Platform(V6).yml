@@ -801,14 +801,20 @@ jobs:
     runs-on: ubuntu-latest
     needs: [rerun-failed-jobs, job_organize_tags]
     if: ${{ always() && !cancelled() }}
+    env:
+      MY_SECRET_PAT: ${{ secrets.MY_SECRET_PAT }}
     steps:
       - name: Trigger Release Update
-        if: ${{ needs.rerun-failed-jobs.result == 'skipped' && fromJSON(github.run_attempt) < 4 }}
+        if: ${{ needs.rerun-failed-jobs.result == 'skipped' && fromJSON(github.run_attempt) < 4 && env.MY_SECRET_PAT != '' }}
         uses: peter-evans/repository-dispatch@v4
         with:
-          token: ${{ secrets.MY_SECRET_PAT }}
+          token: ${{ env.MY_SECRET_PAT }}
           repository: smallprogram/MyAction
           event-type: openwrt_compilation_completed
+
+      - name: Skip Release Update Without MY_SECRET_PAT
+        if: ${{ needs.rerun-failed-jobs.result == 'skipped' && fromJSON(github.run_attempt) < 4 && env.MY_SECRET_PAT == '' }}
+        run: echo "::notice::MY_SECRET_PAT is not configured; skipped the cross-repository release update."
 
       # - name: Stateful Lifecycle Check
       #   id: lifecycle_check
