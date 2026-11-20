@@ -96,9 +96,6 @@ echo "🎉 移植完毕"
 rm -rf ./feeds/packages/net/open-app-filter
 
 # Modify default IP
-sed -i 's/192.168.1.1/192.168.0.1/g' package/base-files/files/bin/config_generate
-
-# fixed rust host build download llvm in ci error
 # sed -i 's/--set=llvm\.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/' package/custom_overrides/rust/Makefile
 # grep -q -- '--ci false \\' package/custom_overrides/rust/Makefile || sed -i '/x\.py \\/a \        --ci false \\' package/custom_overrides/rust/Makefile
 
@@ -114,7 +111,6 @@ cp -a $PATCHES_SRC_DIR/diy_script/custom_packages/banip/world-50m.json ./feeds/l
 # --- Modify SSH Configuration (Dropbear -> 2222, OpenSSH -> 22) ---
 
 # 1. 确保 files 目录存在 (在 OpenWrt 源码根目录下)
-mkdir -p files/etc/uci-defaults
 
 # 2. Generate a first-boot root partition expansion script
 cat << 'EOF' > files/etc/uci-defaults/98-expand-rootfs
