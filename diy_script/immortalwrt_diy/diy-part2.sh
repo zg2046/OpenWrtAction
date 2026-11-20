@@ -96,7 +96,7 @@ echo "🎉 移植完毕"
 rm -rf ./feeds/packages/net/open-app-filter
 
 # Modify default IP
-sed -i 's/192.168.1.1/10.10.0.253/g' package/base-files/files/bin/config_generate
+sed -i 's/192.168.1.1/192.168.0.1/g' package/base-files/files/bin/config_generate
 
 # fixed rust host build download llvm in ci error
 # sed -i 's/--set=llvm\.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/' package/custom_overrides/rust/Makefile
@@ -116,7 +116,90 @@ cp -a $PATCHES_SRC_DIR/diy_script/custom_packages/banip/world-50m.json ./feeds/l
 # 1. 确保 files 目录存在 (在 OpenWrt 源码根目录下)
 mkdir -p files/etc/uci-defaults
 
-# 2. 生成首次启动脚本
+# 2. Generate a first-boot root partition expansion script
+cat << 'EOF' > files/etc/uci-defaults/98-expand-rootfs
+#!/bin/sh
+set -e
+
+log() {
+    logger -t expand-rootfs "$*"
+}
+
+root_fs="$(awk '$2 == "/" { print $3; exit }' /proc/mounts)"
+if [ "$root_fs" != "ext4" ]; then
+    log "ERROR: expected ext4 root filesystem, found '$root_fs'"
+    exit 1
+fi
+
+root_uuid="$(sed -n 's/.*root=PARTUUID=\([^ ]*\).*/\1/p' /proc/cmdline)"
+if [ -z "$root_uuid" ]; then
+    log "ERROR: root PARTUUID not found in kernel command line"
+    exit 1
+fi
+root_uuid="$(printf '%s' "$root_uuid" | tr '[:upper:]' '[:lower:]')"
+
+root_part_sysfs=""
+for entry in /sys/class/block/*; do
+    [ -f "$entry/partition" ] || continue
+    [ -r "$entry/uevent" ] || continue
+    part_uuid="$(sed -n 's/^PARTUUID=//p' "$entry/uevent" | tr '[:upper:]' '[:lower:]')"
+    if [ "$part_uuid" = "$root_uuid" ]; then
+        root_part_sysfs="$entry"
+        break
+    fi
+done
+
+if [ -z "$root_part_sysfs" ]; then
+    log "ERROR: cannot map root PARTUUID to a block partition"
+    exit 1
+fi
+
+root_part_name="${root_part_sysfs##*/}"
+root_device="/dev/$root_part_name"
+partition_number="$(cat "$root_part_sysfs/partition")"
+disk_name="$(basename "$(dirname "$(readlink -f "$root_part_sysfs")")")"
+disk_device="/dev/$disk_name"
+pending_marker="/etc/rootfs-expand.pending"
+
+if [ ! -e "$pending_marker" ]; then
+    if ! parted -s "$disk_device" resizepart "$partition_number" 100%; then
+        log "ERROR: failed to extend root partition $root_device"
+        exit 1
+    fi
+
+    touch "$pending_marker"
+    sync
+    log "Root partition extended; rebooting to refresh the partition table"
+    reboot
+    exit 1
+fi
+
+disk_sectors="$(cat "/sys/class/block/$disk_name/size")"
+partition_start="$(cat "$root_part_sysfs/start")"
+partition_sectors="$(cat "$root_part_sysfs/size")"
+if [ "$((partition_start + partition_sectors))" -lt "$((disk_sectors - 8192))" ]; then
+    if ! parted -s "$disk_device" resizepart "$partition_number" 100%; then
+        log "ERROR: root partition $root_device still does not fill the disk"
+        exit 1
+    fi
+    sync
+    log "Root partition size is not visible yet; rebooting to retry"
+    reboot
+    exit 1
+fi
+
+if ! resize2fs "$root_device"; then
+    log "ERROR: failed to resize ext4 filesystem on $root_device"
+    exit 1
+fi
+
+rm -f "$pending_marker"
+log "Root filesystem expanded to the available storage"
+exit 0
+EOF
+chmod +x files/etc/uci-defaults/98-expand-rootfs
+
+# 3. 生成首次启动脚本
 cat << 'EOF' > files/etc/uci-defaults/99-custom-ssh-config
 #!/bin/sh
 
