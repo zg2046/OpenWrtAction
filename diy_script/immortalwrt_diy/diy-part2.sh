@@ -17,6 +17,11 @@ else
     PATCHES_SRC_DIR="../OpenWrtAction"
 fi
 
+IMAGE_SIZE_PATCH="$PATCHES_SRC_DIR/diy_script/immortalwrt_diy/patches/0001-sparse-rockchip-rootfs-images.patch"
+if [ ! -f "$IMAGE_SIZE_PATCH" ] || ! patch --forward --batch -p1 < "$IMAGE_SIZE_PATCH"; then
+    echo "ERROR: failed to apply the sparse rootfs image patch"
+    exit 1
+fi
 
 #------------------------------------------------------移植包------------------------------------------------------------
 # --- 拉取上游仓库 ---
@@ -113,106 +118,10 @@ cp -a $PATCHES_SRC_DIR/diy_script/custom_packages/banip/world-50m.json ./feeds/l
 # 1. 确保 files 目录存在 (在 OpenWrt 源码根目录下)
 mkdir -p files/etc/uci-defaults
 
-# 2. Generate a first-boot root partition expansion script
-cat << 'EOF' > files/etc/uci-defaults/98-expand-rootfs
-#!/bin/sh
-set -e
+# Both R4S filesystem images use a pre-sized partition for 32 GB cards.
+# Do not attempt to resize the mounted root filesystem online.
 
-log() {
-    logger -t expand-rootfs "$*"
-}
-
-root_uuid="$(sed -n 's/.*root=PARTUUID=\([^ ]*\).*/\1/p' /proc/cmdline)"
-if [ -z "$root_uuid" ]; then
-    log "ERROR: root PARTUUID not found in kernel command line"
-    exit 1
-fi
-root_uuid="$(printf '%s' "$root_uuid" | tr '[:upper:]' '[:lower:]')"
-
-root_device=""
-for sys_entry in /sys/class/block/*; do
-    [ -f "$sys_entry/partition" ] || continue
-    dev="/dev/${sys_entry##*/}"
-    dev_uuid=""
-    if [ -f "$sys_entry/uevent" ]; then
-        dev_uuid="$(sed -n 's/^PARTUUID=//p' "$sys_entry/uevent" | tr '[:upper:]' '[:lower:]')"
-    fi
-    if [ -z "$dev_uuid" ] && command -v blkid >/dev/null 2>&1; then
-        dev_uuid="$(blkid -s PARTUUID -o value "$dev" 2>/dev/null)"
-        dev_uuid="$(printf '%s' "$dev_uuid" | tr '[:upper:]' '[:lower:]')"
-    fi
-    if [ "$dev_uuid" = "$root_uuid" ]; then
-        root_device="$dev"
-        break
-    fi
-done
-
-if [ -z "$root_device" ] || [ ! -b "$root_device" ]; then
-    log "ERROR: cannot resolve root PARTUUID $root_uuid to a block device"
-    log "Available block information:"
-    block info 2>/dev/null | logger -t expand-rootfs
-    exit 1
-fi
-
-root_part_name="${root_device##*/}"
-root_part_sysfs="/sys/class/block/$root_part_name"
-if [ ! -d "$root_part_sysfs" ]; then
-    log "ERROR: cannot find sysfs entry for $root_device"
-    exit 1
-fi
-partition_number="$(cat "$root_part_sysfs/partition")"
-disk_name="$(basename "$(dirname "$(readlink -f "$root_part_sysfs")")")"
-disk_device="/dev/$disk_name"
-pending_marker="/etc/rootfs-expand.pending"
-
-log "Root device resolved: $root_device, partition $partition_number, disk $disk_device"
-
-if [ ! -e "$pending_marker" ]; then
-    if ! parted -s "$disk_device" resizepart "$partition_number" 100%; then
-        log "ERROR: failed to extend root partition $root_device"
-        exit 1
-    fi
-
-    touch "$pending_marker"
-    sync
-    log "Root partition extended; rebooting to refresh the partition table"
-    reboot
-    exit 1
-fi
-
-disk_sectors="$(cat "/sys/class/block/$disk_name/size")"
-partition_start="$(cat "$root_part_sysfs/start")"
-partition_sectors="$(cat "$root_part_sysfs/size")"
-if [ "$((partition_start + partition_sectors))" -lt "$((disk_sectors - 8192))" ]; then
-    if ! parted -s "$disk_device" resizepart "$partition_number" 100%; then
-        log "ERROR: root partition $root_device still does not fill the disk"
-        exit 1
-    fi
-    sync
-    log "Root partition size is not visible yet; rebooting to retry"
-    reboot
-    exit 1
-fi
-
-root_fs="$(blkid -s TYPE -o value "$root_device" 2>/dev/null)"
-if [ "$root_fs" = "ext4" ]; then
-    if ! resize2fs -f "$root_device"; then
-        log "ERROR: failed to resize ext4 root filesystem"
-        exit 1
-    fi
-    log "Ext4 root filesystem resized"
-else
-    log "ERROR: unsupported root filesystem type '$root_fs' on $root_device"
-    exit 1
-fi
-
-rm -f "$pending_marker"
-log "Root partition and filesystem expanded to the available storage"
-exit 0
-EOF
-chmod +x files/etc/uci-defaults/98-expand-rootfs
-
-# 3. 生成首次启动脚本
+# 2. 生成首次启动脚本
 cat << 'EOF' > files/etc/uci-defaults/99-custom-ssh-config
 #!/bin/sh
 
