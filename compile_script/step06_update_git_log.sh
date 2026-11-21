@@ -48,6 +48,7 @@ echo "">>release.txt
 echo "- **Target:** NanoPi R4S / ImmortalWrt \`openwrt-25.12\`">>release.txt
 echo "- **Docker:** \`dockerd\`, Docker CLI, Docker Compose, containerd, runc, and LuCI Docker management (\`luci-app-dockerman\`)">>release.txt
 echo "- **Docker firewall:** LAN-to-Docker forwarding is enabled; the Docker zone accepts forwarding and enables masquerading for Docker bridge traffic">>release.txt
+echo "- **mDNS:** Avahi daemon, SSH/HTTP service advertisements, and Avahi utilities are included and enabled at boot; UDP 5353 is allowed from LAN">>release.txt
 echo "- **LAN address:** Default IP \`192.168.1.1\`, netmask \`255.255.255.0\`, broadcast \`192.168.1.255\`">>release.txt
 echo "- **Storage layout:** EXT4 and SquashFS images use a pre-sized 29,000 MiB root partition for 32 GB cards; no online first-boot resize is attempted">>release.txt
 echo "- **Disk management:** LuCI DiskMan is included for partition/format operations; root-filesystem resizing requires a compatible offline or pre-sized layout">>release.txt

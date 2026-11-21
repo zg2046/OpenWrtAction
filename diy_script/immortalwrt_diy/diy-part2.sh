@@ -122,6 +122,37 @@ mkdir -p files/etc/hotplug.d/iface
 # Both R4S filesystem images use a pre-sized partition for 32 GB cards.
 # Do not attempt to resize the mounted root filesystem online.
 
+# Install and start Avahi mDNS discovery on every boot.
+cat << 'EOF' > files/etc/uci-defaults/97-avahi-daemon
+#!/bin/sh
+
+if [ -x /etc/init.d/avahi-daemon ]; then
+    /etc/init.d/avahi-daemon enable
+    /etc/init.d/avahi-daemon start
+fi
+
+avahi_rule_exists=0
+for section in $(uci show firewall 2>/dev/null | sed -n 's/^firewall\.\(.*\)=rule$/\1/p'); do
+    if [ "$(uci -q get "firewall.$section.name")" = "Allow-Avahi-LAN" ]; then
+        avahi_rule_exists=1
+        break
+    fi
+done
+if [ "$avahi_rule_exists" = "0" ]; then
+    rule="$(uci add firewall rule)"
+    uci set "firewall.$rule.name=Allow-Avahi-LAN"
+    uci set "firewall.$rule.src=lan"
+    uci set "firewall.$rule.proto=udp"
+    uci set "firewall.$rule.dest_port=5353"
+    uci set "firewall.$rule.target=ACCEPT"
+fi
+uci commit firewall
+/etc/init.d/firewall reload >/dev/null 2>&1
+
+exit 0
+EOF
+chmod +x files/etc/uci-defaults/97-avahi-daemon
+
 # Ensure Docker traffic is accepted from the LAN and routed through the firewall.
 cat << 'EOF' > files/etc/uci-defaults/98-docker-firewall
 #!/bin/sh
@@ -147,14 +178,23 @@ ensure_docker_firewall() {
     uci set "firewall.$docker_zone.masq=1"
     uci set "firewall.$docker_zone.mtu_fix=1"
 
+    lan_to_wan=0
     lan_to_docker=0
     for section in $(uci show firewall 2>/dev/null | sed -n 's/^firewall\.\(.*\)=forwarding$/\1/p'); do
-        if [ "$(uci -q get "firewall.$section.src")" = "lan" ] &&
-           [ "$(uci -q get "firewall.$section.dest")" = "docker" ]; then
+        src="$(uci -q get "firewall.$section.src")"
+        dest="$(uci -q get "firewall.$section.dest")"
+        if [ "$src" = "lan" ] && [ "$dest" = "wan" ]; then
+            lan_to_wan=1
+        fi
+        if [ "$src" = "lan" ] && [ "$dest" = "docker" ]; then
             lan_to_docker=1
-            break
         fi
     done
+    if [ "$lan_to_wan" = "0" ]; then
+        forwarding="$(uci add firewall forwarding)"
+        uci set "firewall.$forwarding.src=lan"
+        uci set "firewall.$forwarding.dest=wan"
+    fi
     if [ "$lan_to_docker" = "0" ]; then
         forwarding="$(uci add firewall forwarding)"
         uci set "firewall.$forwarding.src=lan"
