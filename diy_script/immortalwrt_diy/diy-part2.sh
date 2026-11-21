@@ -126,9 +126,22 @@ mkdir -p files/etc/hotplug.d/iface
 cat << 'EOF' > files/etc/uci-defaults/97-avahi-daemon
 #!/bin/sh
 
+mkdir -p /usr/share/dbus-1/system.d /etc/dbus-1/system.d
+
+if [ -f /etc/dbus-1/system.d/avahi-dbus.conf ]; then
+    cp -f /etc/dbus-1/system.d/avahi-dbus.conf /usr/share/dbus-1/system.d/avahi-dbus.conf
+elif [ -f /usr/share/dbus-1/system.d/avahi-dbus.conf ]; then
+    cp -f /usr/share/dbus-1/system.d/avahi-dbus.conf /etc/dbus-1/system.d/avahi-dbus.conf
+fi
+
+if [ -x /etc/init.d/dbus ]; then
+    /etc/init.d/dbus restart
+    sleep 1
+fi
+
 if [ -x /etc/init.d/avahi-daemon ]; then
     /etc/init.d/avahi-daemon enable
-    /etc/init.d/avahi-daemon start
+    /etc/init.d/avahi-daemon restart
 fi
 
 avahi_rule_exists=0
