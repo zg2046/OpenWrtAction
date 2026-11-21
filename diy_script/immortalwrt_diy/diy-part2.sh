@@ -111,6 +111,7 @@ cp -a $PATCHES_SRC_DIR/diy_script/custom_packages/banip/world-50m.json ./feeds/l
 # --- Modify SSH Configuration (Dropbear -> 2222, OpenSSH -> 22) ---
 
 # 1. 确保 files 目录存在 (在 OpenWrt 源码根目录下)
+mkdir -p files/etc/uci-defaults
 
 # 2. Generate a first-boot root partition expansion script
 cat << 'EOF' > files/etc/uci-defaults/98-expand-rootfs
@@ -121,12 +122,6 @@ log() {
     logger -t expand-rootfs "$*"
 }
 
-root_fs="$(awk '$2 == "/" { print $3; exit }' /proc/mounts)"
-if [ "$root_fs" != "ext4" ]; then
-    log "ERROR: expected ext4 root filesystem, found '$root_fs'"
-    exit 1
-fi
-
 root_uuid="$(sed -n 's/.*root=PARTUUID=\([^ ]*\).*/\1/p' /proc/cmdline)"
 if [ -z "$root_uuid" ]; then
     log "ERROR: root PARTUUID not found in kernel command line"
@@ -134,28 +129,51 @@ if [ -z "$root_uuid" ]; then
 fi
 root_uuid="$(printf '%s' "$root_uuid" | tr '[:upper:]' '[:lower:]')"
 
-root_part_sysfs=""
-for entry in /sys/class/block/*; do
-    [ -f "$entry/partition" ] || continue
-    [ -r "$entry/uevent" ] || continue
-    part_uuid="$(sed -n 's/^PARTUUID=//p' "$entry/uevent" | tr '[:upper:]' '[:lower:]')"
-    if [ "$part_uuid" = "$root_uuid" ]; then
-        root_part_sysfs="$entry"
-        break
-    fi
-done
+root_device=""
 
-if [ -z "$root_part_sysfs" ]; then
-    log "ERROR: cannot map root PARTUUID to a block partition"
+if command -v block >/dev/null 2>&1; then
+    root_device="$(block info 2>/dev/null | awk -v uuid="$root_uuid" '
+        index($0, "PARTUUID=\"" uuid "\"") {
+            sub(/:.*/, "", $1)
+            print $1
+            exit
+        }
+    ')"
+fi
+
+if [ -z "$root_device" ] && command -v blkid >/dev/null 2>&1; then
+    for sys_entry in /sys/class/block/*; do
+        [ -f "$sys_entry/partition" ] || continue
+        dev="/dev/${sys_entry##*/}"
+        [ -b "$dev" ] || continue
+        dev_uuid="$(blkid -s PARTUUID -o value "$dev" 2>/dev/null)"
+        dev_uuid="$(printf '%s' "$dev_uuid" | tr '[:upper:]' '[:lower:]')"
+        if [ "$dev_uuid" = "$root_uuid" ]; then
+            root_device="$dev"
+            break
+        fi
+    done
+fi
+
+if [ -z "$root_device" ] || [ ! -b "$root_device" ]; then
+    log "ERROR: cannot resolve root PARTUUID $root_uuid to a block device"
+    log "Available block information:"
+    block info 2>/dev/null | logger -t expand-rootfs
     exit 1
 fi
 
-root_part_name="${root_part_sysfs##*/}"
-root_device="/dev/$root_part_name"
+root_part_name="${root_device##*/}"
+root_part_sysfs="/sys/class/block/$root_part_name"
+if [ ! -d "$root_part_sysfs" ]; then
+    log "ERROR: cannot find sysfs entry for $root_device"
+    exit 1
+fi
 partition_number="$(cat "$root_part_sysfs/partition")"
 disk_name="$(basename "$(dirname "$(readlink -f "$root_part_sysfs")")")"
 disk_device="/dev/$disk_name"
 pending_marker="/etc/rootfs-expand.pending"
+
+log "Root device resolved: $root_device, partition $partition_number, disk $disk_device"
 
 if [ ! -e "$pending_marker" ]; then
     if ! parted -s "$disk_device" resizepart "$partition_number" 100%; then
