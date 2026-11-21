@@ -117,9 +117,89 @@ cp -a $PATCHES_SRC_DIR/diy_script/custom_packages/banip/world-50m.json ./feeds/l
 
 # 1. 确保 files 目录存在 (在 OpenWrt 源码根目录下)
 mkdir -p files/etc/uci-defaults
+mkdir -p files/etc/hotplug.d/iface
 
 # Both R4S filesystem images use a pre-sized partition for 32 GB cards.
 # Do not attempt to resize the mounted root filesystem online.
+
+# Ensure Docker traffic is accepted from the LAN and routed through the firewall.
+cat << 'EOF' > files/etc/uci-defaults/98-docker-firewall
+#!/bin/sh
+
+ensure_docker_firewall() {
+    docker_zone=""
+    for section in $(uci show firewall 2>/dev/null | sed -n 's/^firewall\.\(.*\)=zone$/\1/p'); do
+        if [ "$(uci -q get "firewall.$section.name")" = "docker" ]; then
+            docker_zone="$section"
+            break
+        fi
+    done
+
+    if [ -z "$docker_zone" ]; then
+        docker_zone="$(uci add firewall zone)"
+        uci set "firewall.$docker_zone.name=docker"
+    fi
+
+    uci set "firewall.$docker_zone.network=docker"
+    uci set "firewall.$docker_zone.input=ACCEPT"
+    uci set "firewall.$docker_zone.output=ACCEPT"
+    uci set "firewall.$docker_zone.forward=ACCEPT"
+    uci set "firewall.$docker_zone.masq=1"
+    uci set "firewall.$docker_zone.mtu_fix=1"
+
+    lan_to_docker=0
+    for section in $(uci show firewall 2>/dev/null | sed -n 's/^firewall\.\(.*\)=forwarding$/\1/p'); do
+        if [ "$(uci -q get "firewall.$section.src")" = "lan" ] &&
+           [ "$(uci -q get "firewall.$section.dest")" = "docker" ]; then
+            lan_to_docker=1
+            break
+        fi
+    done
+    if [ "$lan_to_docker" = "0" ]; then
+        forwarding="$(uci add firewall forwarding)"
+        uci set "firewall.$forwarding.src=lan"
+        uci set "firewall.$forwarding.dest=docker"
+    fi
+
+    if [ -z "$(uci -q get network.docker)" ]; then
+        uci set network.docker=interface
+    fi
+    uci set network.docker.proto=none
+    uci set network.docker.device=docker0
+
+    uci commit network
+    uci commit firewall
+}
+
+ensure_docker_firewall
+/etc/init.d/firewall reload >/dev/null 2>&1
+
+exit 0
+EOF
+chmod +x files/etc/uci-defaults/98-docker-firewall
+
+cat << 'EOF' > files/etc/hotplug.d/iface/99-docker-firewall
+#!/bin/sh
+
+[ "$ACTION" = "ifup" ] || [ "$ACTION" = "ifupdate" ] || exit 0
+[ "$DEVICE" = "docker0" ] || exit 0
+
+docker_zone=""
+for section in $(uci show firewall 2>/dev/null | sed -n 's/^firewall\.\(.*\)=zone$/\1/p'); do
+    if [ "$(uci -q get "firewall.$section.name")" = "docker" ]; then
+        docker_zone="$section"
+        break
+    fi
+done
+
+if [ -n "$docker_zone" ]; then
+    uci set "firewall.$docker_zone.forward=ACCEPT"
+    uci set "firewall.$docker_zone.masq=1"
+    uci commit firewall
+    /etc/init.d/firewall reload >/dev/null 2>&1
+fi
+EOF
+chmod +x files/etc/hotplug.d/iface/99-docker-firewall
 
 # 2. 生成首次启动脚本
 cat << 'EOF' > files/etc/uci-defaults/99-custom-ssh-config
