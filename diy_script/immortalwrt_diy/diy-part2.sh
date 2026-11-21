@@ -130,14 +130,22 @@ fi
 root_uuid="$(printf '%s' "$root_uuid" | tr '[:upper:]' '[:lower:]')"
 
 root_device=""
-
-if command -v block >/dev/null 2>&1; then
-    root_device="$(block info 2>/dev/null | awk '/ MOUNT="\/rom"/ {
-        sub(/:.*/, "", $1)
-        print $1
-        exit
-    }')"
-fi
+for sys_entry in /sys/class/block/*; do
+    [ -f "$sys_entry/partition" ] || continue
+    dev="/dev/${sys_entry##*/}"
+    dev_uuid=""
+    if [ -f "$sys_entry/uevent" ]; then
+        dev_uuid="$(sed -n 's/^PARTUUID=//p' "$sys_entry/uevent" | tr '[:upper:]' '[:lower:]')"
+    fi
+    if [ -z "$dev_uuid" ] && command -v blkid >/dev/null 2>&1; then
+        dev_uuid="$(blkid -s PARTUUID -o value "$dev" 2>/dev/null)"
+        dev_uuid="$(printf '%s' "$dev_uuid" | tr '[:upper:]' '[:lower:]')"
+    fi
+    if [ "$dev_uuid" = "$root_uuid" ]; then
+        root_device="$dev"
+        break
+    fi
+done
 
 if [ -z "$root_device" ] || [ ! -b "$root_device" ]; then
     log "ERROR: cannot resolve root PARTUUID $root_uuid to a block device"
@@ -186,13 +194,46 @@ if [ "$((partition_start + partition_sectors))" -lt "$((disk_sectors - 8192))" ]
     exit 1
 fi
 
-if [ -r "/sys/class/block/loop0/size" ]; then
-    loop_sectors="$(cat /sys/class/block/loop0/size)"
-    log "F2FS loop device size after reboot: $loop_sectors sectors"
+squash_layout=false
+if [ -e "/sys/class/block/loop0" ] && command -v losetup >/dev/null 2>&1; then
+    if losetup -a 2>/dev/null | grep -q '/dev/loop0'; then
+        squash_layout=true
+    fi
+fi
+if [ "$squash_layout" != true ] && [ -r "/proc/mounts" ]; then
+    grep -q "/dev/loop0 .* /overlay f2fs " /proc/mounts && squash_layout=true
+fi
+
+if [ "$squash_layout" = true ]; then
+    if command -v losetup >/dev/null 2>&1; then
+        losetup -c /dev/loop0 2>/dev/null || log "WARNING: unable to refresh loop0 size"
+    fi
+    if command -v resize.f2fs >/dev/null 2>&1; then
+        if ! resize.f2fs /dev/loop0; then
+            log "ERROR: failed to resize F2FS rootfs_data"
+            exit 1
+        fi
+        log "F2FS rootfs_data resized"
+    else
+        log "ERROR: resize.f2fs not found"
+        exit 1
+    fi
+else
+    root_fs="$(blkid -s TYPE -o value "$root_device" 2>/dev/null)"
+    if [ "$root_fs" = "ext4" ]; then
+        if ! resize2fs -f "$root_device"; then
+            log "ERROR: failed to resize ext4 root filesystem"
+            exit 1
+        fi
+        log "Ext4 root filesystem resized"
+    else
+        log "ERROR: unsupported root filesystem type '$root_fs' on $root_device"
+        exit 1
+    fi
 fi
 
 rm -f "$pending_marker"
-log "Root partition expanded to the available storage"
+log "Root partition and filesystem expanded to the available storage"
 exit 0
 EOF
 chmod +x files/etc/uci-defaults/98-expand-rootfs
