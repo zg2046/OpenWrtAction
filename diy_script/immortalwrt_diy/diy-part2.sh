@@ -132,27 +132,11 @@ root_uuid="$(printf '%s' "$root_uuid" | tr '[:upper:]' '[:lower:]')"
 root_device=""
 
 if command -v block >/dev/null 2>&1; then
-    root_device="$(block info 2>/dev/null | awk -v uuid="$root_uuid" '
-        index($0, "PARTUUID=\"" uuid "\"") {
-            sub(/:.*/, "", $1)
-            print $1
-            exit
-        }
-    ')"
-fi
-
-if [ -z "$root_device" ] && command -v blkid >/dev/null 2>&1; then
-    for sys_entry in /sys/class/block/*; do
-        [ -f "$sys_entry/partition" ] || continue
-        dev="/dev/${sys_entry##*/}"
-        [ -b "$dev" ] || continue
-        dev_uuid="$(blkid -s PARTUUID -o value "$dev" 2>/dev/null)"
-        dev_uuid="$(printf '%s' "$dev_uuid" | tr '[:upper:]' '[:lower:]')"
-        if [ "$dev_uuid" = "$root_uuid" ]; then
-            root_device="$dev"
-            break
-        fi
-    done
+    root_device="$(block info 2>/dev/null | awk '/ MOUNT="\/rom"/ {
+        sub(/:.*/, "", $1)
+        print $1
+        exit
+    }')"
 fi
 
 if [ -z "$root_device" ] || [ ! -b "$root_device" ]; then
@@ -202,13 +186,13 @@ if [ "$((partition_start + partition_sectors))" -lt "$((disk_sectors - 8192))" ]
     exit 1
 fi
 
-if ! resize2fs "$root_device"; then
-    log "ERROR: failed to resize ext4 filesystem on $root_device"
-    exit 1
+if [ -r "/sys/class/block/loop0/size" ]; then
+    loop_sectors="$(cat /sys/class/block/loop0/size)"
+    log "F2FS loop device size after reboot: $loop_sectors sectors"
 fi
 
 rm -f "$pending_marker"
-log "Root filesystem expanded to the available storage"
+log "Root partition expanded to the available storage"
 exit 0
 EOF
 chmod +x files/etc/uci-defaults/98-expand-rootfs
