@@ -208,16 +208,7 @@ if [ "$squash_layout" = true ]; then
     if command -v losetup >/dev/null 2>&1; then
         losetup -c /dev/loop0 2>/dev/null || log "WARNING: unable to refresh loop0 size"
     fi
-    if command -v resize.f2fs >/dev/null 2>&1; then
-        if ! resize.f2fs /dev/loop0; then
-            log "ERROR: failed to resize F2FS rootfs_data"
-            exit 1
-        fi
-        log "F2FS rootfs_data resized"
-    else
-        log "ERROR: resize.f2fs not found"
-        exit 1
-    fi
+    log "WARNING: partition expanded, but SquashFS/F2FS rootfs_data requires an offline resize.f2fs"
 else
     root_fs="$(blkid -s TYPE -o value "$root_device" 2>/dev/null)"
     if [ "$root_fs" = "ext4" ]; then
