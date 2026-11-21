@@ -48,7 +48,7 @@ echo "">>release.txt
 echo "- **Target:** NanoPi R4S / ImmortalWrt \`openwrt-25.12\`">>release.txt
 echo "- **Docker:** \`dockerd\`, Docker CLI, Docker Compose, containerd, runc, and LuCI Docker management (\`luci-app-dockerman\`)">>release.txt
 echo "- **LAN address:** Default IP \`192.168.1.1\`, netmask \`255.255.255.0\`, broadcast \`192.168.1.255\`">>release.txt
-echo "- **Storage expansion:** Installs a first-boot uci-defaults script that expands the ext4 root partition and filesystem to the storage card's available capacity">>release.txt
+echo "- **Storage expansion:** R4S uses EXT4 rootfs; a first-boot uci-defaults script expands the root partition and filesystem automatically to the storage card's available capacity">>release.txt
 echo "- **SSH:** Dropbear on port \`2222\`; OpenSSH on port \`22\`">>release.txt
 echo "">>release.txt
 echo "## What's Changed" >>release.txt

@@ -194,33 +194,16 @@ if [ "$((partition_start + partition_sectors))" -lt "$((disk_sectors - 8192))" ]
     exit 1
 fi
 
-squash_layout=false
-if [ -e "/sys/class/block/loop0" ] && command -v losetup >/dev/null 2>&1; then
-    if losetup -a 2>/dev/null | grep -q '/dev/loop0'; then
-        squash_layout=true
-    fi
-fi
-if [ "$squash_layout" != true ] && [ -r "/proc/mounts" ]; then
-    grep -q "/dev/loop0 .* /overlay f2fs " /proc/mounts && squash_layout=true
-fi
-
-if [ "$squash_layout" = true ]; then
-    if command -v losetup >/dev/null 2>&1; then
-        losetup -c /dev/loop0 2>/dev/null || log "WARNING: unable to refresh loop0 size"
-    fi
-    log "WARNING: partition expanded, but SquashFS/F2FS rootfs_data requires an offline resize.f2fs"
-else
-    root_fs="$(blkid -s TYPE -o value "$root_device" 2>/dev/null)"
-    if [ "$root_fs" = "ext4" ]; then
-        if ! resize2fs -f "$root_device"; then
-            log "ERROR: failed to resize ext4 root filesystem"
-            exit 1
-        fi
-        log "Ext4 root filesystem resized"
-    else
-        log "ERROR: unsupported root filesystem type '$root_fs' on $root_device"
+root_fs="$(blkid -s TYPE -o value "$root_device" 2>/dev/null)"
+if [ "$root_fs" = "ext4" ]; then
+    if ! resize2fs -f "$root_device"; then
+        log "ERROR: failed to resize ext4 root filesystem"
         exit 1
     fi
+    log "Ext4 root filesystem resized"
+else
+    log "ERROR: unsupported root filesystem type '$root_fs' on $root_device"
+    exit 1
 fi
 
 rm -f "$pending_marker"
