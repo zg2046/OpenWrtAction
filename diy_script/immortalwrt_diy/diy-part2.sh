@@ -120,7 +120,7 @@ mkdir -p files/etc/uci-defaults
 mkdir -p files/etc/hotplug.d/iface
 mkdir -p files/usr/bin
 
-# Both R4S filesystem images use a pre-sized partition for 32 GB cards.
+# Both R4S filesystem images use an 8 GiB root partition to reduce flashing time.
 # Do not attempt to resize the mounted root filesystem online.
 
 # Install and start Avahi mDNS discovery on every boot.
