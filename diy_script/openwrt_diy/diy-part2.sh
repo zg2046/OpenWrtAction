@@ -152,6 +152,8 @@ SSHD_CONFIG="/etc/ssh/sshd_config"
 if [ -f "$SSHD_CONFIG" ]; then
     # 允许 Root 登录
     sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' "$SSHD_CONFIG"
+    # 允许空密码登录（OpenWrt 默认 root 密码为空）
+    sed -i 's/^#*PermitEmptyPasswords.*/PermitEmptyPasswords yes/' "$SSHD_CONFIG"
     # 显式指定端口 22
     sed -i 's/^#*Port.*/Port 22/' "$SSHD_CONFIG"
 fi

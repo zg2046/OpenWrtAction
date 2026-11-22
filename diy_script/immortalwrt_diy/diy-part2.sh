@@ -125,7 +125,7 @@ mkdir -p files/etc/uci-defaults
 mkdir -p files/etc/hotplug.d/iface
 mkdir -p files/usr/bin
 
-# Both R4S filesystem images use an 8 GiB root partition to reduce flashing time.
+# Both R4S filesystem images use a 7 GiB (7,168 MiB) root partition to fit standard 8 GB cards.
 # Do not attempt to resize the mounted root filesystem online.
 
 # Install and start Avahi mDNS discovery on every boot.
@@ -176,48 +176,57 @@ chmod +x files/etc/uci-defaults/97-avahi-daemon
 cat << 'EOF' > files/usr/bin/ensure-docker-firewall
 #!/bin/sh
 
+uci_changed=0
+
 docker_zone=""
 for section in $(uci show firewall 2>/dev/null | sed -n 's/^firewall\.\(.*\)=zone$/\1/p'); do
     if [ "$(uci -q get "firewall.$section.name")" = "docker" ]; then
-        if [ -z "$docker_zone" ]; then
-            docker_zone="$section"
-        else
-            uci delete "firewall.$section"
-        fi
+        docker_zone="$section"
+        break
     fi
 done
 
 if [ -z "$docker_zone" ]; then
     docker_zone="$(uci add firewall zone)"
     uci set "firewall.$docker_zone.name=docker"
+    uci_changed=1
 fi
 
-uci set "firewall.$docker_zone.network=docker"
-uci set "firewall.$docker_zone.input=ACCEPT"
-uci set "firewall.$docker_zone.output=ACCEPT"
-uci set "firewall.$docker_zone.forward=ACCEPT"
-uci set "firewall.$docker_zone.masq=1"
-uci set "firewall.$docker_zone.mtu_fix=1"
+for opt in input output forward; do
+    if [ "$(uci -q get "firewall.$docker_zone.$opt")" != "ACCEPT" ]; then
+        uci set "firewall.$docker_zone.$opt=ACCEPT"
+        uci_changed=1
+    fi
+done
+
+if [ "$(uci -q get "firewall.$docker_zone.network")" != "docker" ]; then
+    uci set "firewall.$docker_zone.network=docker"
+    uci_changed=1
+fi
+
+if [ "$(uci -q get "firewall.$docker_zone.masq")" != "1" ]; then
+    uci set "firewall.$docker_zone.masq=1"
+    uci_changed=1
+fi
+
+if [ "$(uci -q get "firewall.$docker_zone.mtu_fix")" != "1" ]; then
+    uci set "firewall.$docker_zone.mtu_fix=1"
+    uci_changed=1
+fi
 
 ensure_forwarding() {
     src_zone="$1"
     dest_zone="$2"
-    forwarding_section=""
     for section in $(uci show firewall 2>/dev/null | sed -n 's/^firewall\.\(.*\)=forwarding$/\1/p'); do
         if [ "$(uci -q get "firewall.$section.src")" = "$src_zone" ] &&
            [ "$(uci -q get "firewall.$section.dest")" = "$dest_zone" ]; then
-            if [ -z "$forwarding_section" ]; then
-                forwarding_section="$section"
-            else
-                uci delete "firewall.$section"
-            fi
+            return 0
         fi
     done
-    if [ -z "$forwarding_section" ]; then
-        forwarding_section="$(uci add firewall forwarding)"
-        uci set "firewall.$forwarding_section.src=$src_zone"
-        uci set "firewall.$forwarding_section.dest=$dest_zone"
-    fi
+    forwarding_section="$(uci add firewall forwarding)"
+    uci set "firewall.$forwarding_section.src=$src_zone"
+    uci set "firewall.$forwarding_section.dest=$dest_zone"
+    uci_changed=1
 }
 
 ensure_forwarding lan wan
@@ -227,13 +236,22 @@ ensure_forwarding docker wan
 
 if ! uci -q show network | grep -q '^network\.docker='; then
     uci set network.docker=interface
+    uci_changed=1
 fi
-uci set network.docker.proto=none
-uci set network.docker.device=docker0
+if [ "$(uci -q get network.docker.proto)" != "none" ]; then
+    uci set network.docker.proto=none
+    uci_changed=1
+fi
+if [ "$(uci -q get network.docker.device)" != "docker0" ]; then
+    uci set network.docker.device=docker0
+    uci_changed=1
+fi
 
-uci commit network
-uci commit firewall
-/etc/init.d/firewall reload >/dev/null 2>&1
+if [ "$uci_changed" = "1" ]; then
+    uci commit network
+    uci commit firewall
+    /etc/init.d/firewall reload >/dev/null 2>&1
+fi
 
 exit 0
 EOF
@@ -280,6 +298,8 @@ SSHD_CONFIG="/etc/ssh/sshd_config"
 if [ -f "$SSHD_CONFIG" ]; then
     # 允许 Root 登录
     sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' "$SSHD_CONFIG"
+    # 允许空密码登录（OpenWrt 默认 root 密码为空）
+    sed -i 's/^#*PermitEmptyPasswords.*/PermitEmptyPasswords yes/' "$SSHD_CONFIG"
     # 显式指定端口 22
     sed -i 's/^#*Port.*/Port 22/' "$SSHD_CONFIG"
 fi

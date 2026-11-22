@@ -50,7 +50,7 @@ echo "- **Docker:** \`dockerd\`, Docker CLI, Docker Compose, containerd, runc, a
 echo "- **Docker firewall:** Docker bridge traffic is masqueraded and forwarded to LAN and WAN; LAN-to-Docker forwarding is enabled">>release.txt
 echo "- **mDNS:** Avahi D-Bus daemon, SSH/HTTP service advertisements, and Avahi utilities are included and enabled at boot; the Avahi D-Bus policy is synchronized for ujail/D-Bus and UDP 5353 is allowed from LAN">>release.txt
 echo "- **LAN address:** Default IP \`192.168.1.1\`, netmask \`255.255.255.0\`, broadcast \`192.168.1.255\`">>release.txt
-echo "- **Storage layout:** EXT4 and SquashFS images use an 8,192 MiB root partition to reduce raw image size and flashing time; larger cards retain unused space and are not automatically expanded">>release.txt
+echo "- **Storage layout:** EXT4 and SquashFS images use a 7,168 MiB (7 GiB) root partition to ensure compatibility with standard 8 GB cards and reduce flashing time; larger cards retain unused space and are not automatically expanded">>release.txt
 echo "- **Disk management:** LuCI DiskMan is included for partition/format operations; root-filesystem resizing requires a compatible offline or pre-sized layout">>release.txt
 echo "- **SSH:** Dropbear on port \`2222\`; OpenSSH on port \`22\`">>release.txt
 echo "">>release.txt
