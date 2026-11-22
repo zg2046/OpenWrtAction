@@ -1,12 +1,9 @@
 <details> <summary> <b>luci-theme-vantage new commit log :rocket: </b> </summary>
 
-#### [:mega: Full Changelog. ](https://github.com/anothaDev/luci-theme-vantage/compare/8729104405b85d6c43347233d1cce15c2ed8d750...d9721507de0f87c14be000fec319d08af94cbdb9)  
+#### [:mega: Full Changelog. ](https://github.com/anothaDev/luci-theme-vantage/compare/d9721507de0f87c14be000fec319d08af94cbdb9...33ebe9553616ff2b408a7d9fe686d5b711997b57)  
 :heavy_exclamation_mark: The list displays only the latest 15 commit logs.  
 
 SHA|Author|Date|Message
 -|-|-|-
-d972150|Eldhose|Sun Nov 22 14:07:39 2026 +0530|Network path: "+n more" opens the rest of a node's clients (#154)
-4e871a4|Eldhose|Sun Nov 22 14:01:10 2026 +0530|Other access points: wired hosts behind one count in its branch, not the router's Wired (#153)
-287b5b0|Eldhose|Sun Nov 22 13:52:19 2026 +0530|Paired access points: carry each station's Wi-Fi standard and width (#155)
-a07820e|anothaDev|Sun Nov 22 08:17:54 2026 +0100|After 1.1.1: #134, a wired device behind an access point, feed deploy retry, versioning rule (#152)
+33ebe95|anothaDev|Sun Nov 22 12:20:12 2026 +0100|Provider tiles, per-device traffic, switch counters and a compact network path (#158)
 </details>
