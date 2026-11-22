@@ -172,7 +172,7 @@ exit 0
 EOF
 chmod +x files/etc/uci-defaults/97-avahi-daemon
 
-# Ensure Docker traffic is accepted from the LAN and routed through the firewall.
+# Bind Docker's bridge to a firewall zone and allow routed Docker traffic.
 cat << 'EOF' > files/usr/bin/ensure-docker-firewall
 #!/bin/sh
 
@@ -222,6 +222,8 @@ ensure_forwarding() {
 
 ensure_forwarding lan wan
 ensure_forwarding lan docker
+ensure_forwarding docker lan
+ensure_forwarding docker wan
 
 if ! uci -q show network | grep -q '^network\.docker='; then
     uci set network.docker=interface
@@ -239,7 +241,13 @@ chmod +x files/usr/bin/ensure-docker-firewall
 
 cat << 'EOF' > files/etc/uci-defaults/98-docker-firewall
 #!/bin/sh
-/usr/bin/ensure-docker-firewall
+
+/usr/bin/ensure-docker-firewall || exit 1
+if [ -x /etc/init.d/dockerd ]; then
+    /etc/init.d/dockerd enable
+fi
+
+exit 0
 EOF
 chmod +x files/etc/uci-defaults/98-docker-firewall
 
@@ -247,7 +255,7 @@ cat << 'EOF' > files/etc/hotplug.d/iface/99-docker-firewall
 #!/bin/sh
 
 [ "$ACTION" = "ifup" ] || [ "$ACTION" = "ifupdate" ] || exit 0
-[ "$DEVICE" = "docker0" ] || exit 0
+[ "$INTERFACE" = "docker" ] || [ "$DEVICE" = "docker0" ] || exit 0
 /usr/bin/ensure-docker-firewall
 EOF
 chmod +x files/etc/hotplug.d/iface/99-docker-firewall
