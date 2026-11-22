@@ -11,6 +11,32 @@ export repos=(
   "src-git accesspolicycontroller https://github.com/smallprogram/openwrt-access-policy-controller.git;main"
 )
 
+patch_ghfu_firmware_repo() {
+    local package_dir="feeds/ghfu/luci-app-ghfu"
+    local upstream_repo="smallprogram/OpenWrtAction"
+    local firmware_repo="zg2046/OpenWrtAction"
+
+    if [ ! -d "$package_dir" ]; then
+        echo "ERROR: could not find GHfu's default firmware repository in $package_dir"
+        return 1
+    fi
+
+    if ! grep -RIlFq "$upstream_repo" "$package_dir"; then
+        if grep -RIlFq "$firmware_repo" "$package_dir"; then
+            echo "GHfu default firmware repository is already $firmware_repo"
+            return 0
+        fi
+        echo "ERROR: could not find GHfu's default firmware repository in $package_dir"
+        return 1
+    fi
+
+    while IFS= read -r file; do
+        sed -i "s|$upstream_repo|$firmware_repo|g" "$file"
+    done < <(grep -RIlF "$upstream_repo" "$package_dir")
+
+    echo "GHfu default firmware repository set to $firmware_repo"
+}
+
 # 自定义软件包列表
 clone_custom_packages () {
     local path="package/custom_packages/"

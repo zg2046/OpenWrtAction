@@ -23,6 +23,11 @@ if [ ! -f "$IMAGE_SIZE_PATCH" ] || ! patch --forward --batch -p1 < "$IMAGE_SIZE_
     exit 1
 fi
 
+source "$PATCHES_SRC_DIR/diy_script/custom_feeds_and_packages.sh"
+if ! patch_ghfu_firmware_repo; then
+    exit 1
+fi
+
 #------------------------------------------------------移植包------------------------------------------------------------
 # --- 拉取上游仓库 ---
 rm -rf temp_resp
